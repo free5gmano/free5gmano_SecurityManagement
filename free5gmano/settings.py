@@ -169,8 +169,8 @@ STATIC_URL = '/static/'
 # "detail": "CSRF Failed: CSRF cookie not set."
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework.authentication.SessionAuthentication'
-        # 'rest_framework.authentication.BasicAuthentication'
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.BasicAuthentication'
         # 'rest_framework.authentication.TokenAuthentication'
     )
 }

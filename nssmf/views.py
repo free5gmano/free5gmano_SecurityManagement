@@ -40,17 +40,29 @@ from SecurityManagement.models import ManoUser
 
 from rest_framework.authentication import SessionAuthentication, BasicAuthentication
 
+import jwt
 
-class CsrfExemptSessionAuthentication(SessionAuthentication):
-    # 跳過SessionAuthentication需要檢查csrf的步驟 
-    def enforce_csrf(self, request):
-        return
+def verify_token(request):
+    token = request.COOKIES.get("token")
+    name, message = str(), str()
+    if token:
+        try:
+            payload = jwt.decode(token, "mnmn5g", algorithm='HS256')
+            name = payload.get("name")
+        except jwt.ExpiredSignatureError:
+            message = 'token已失效'
+        except jwt.DecodeError:
+            message = 'token認證失敗'
+        except jwt.InvalidTokenError:
+            message = '非法的token'
+    else:
+        message = "無token"
+    return name, message
 
 def check_user(request):
-    name = request.user
-    # name = "安安123123" # 使用postman測試時ok，前後端跨域問題尚未解決(request內沒包含使用者登入資訊，登入時被瀏覽器擋住)
     uu_id, role, message = -1, "", ""
-    if name not in ["AnonymousUser", "", None]:
+    name, message = verify_token(request)
+    if not message:
         user_obj = ManoUser.objects.filter(username=name).first()
         if user_obj:
             uu_id = user_obj.id
@@ -59,10 +71,12 @@ def check_user(request):
                 message = "該帳號未被授權"
         else:
             message = "查無使用者"
-    else:
-        message = "請先登入"
     return uu_id, role, message
 
+class CsrfExemptSessionAuthentication(SessionAuthentication):
+    # 跳過SessionAuthentication需要檢查csrf的步驟 
+    def enforce_csrf(self, request):
+        return
 
 class CustomAuthToken(ObtainAuthToken):
 
@@ -135,6 +149,11 @@ class GenericTemplateView(MultipleSerializerViewSet):
             The POST method creates a new individual Generic Template resource.
         """
         uu_id, role, message = check_user(request)
+        if message:
+            return JsonResponse({
+                    "status": 1,
+                    "message": message
+                    })
         name = str(request.user)
         request.POST._mutable = True
         request.POST.update({
@@ -287,6 +306,11 @@ class SliceTemplateView(MultipleSerializerViewSet):
             The POST method creates a new individual Slice Template resource.
         """
         uu_id, role, message = check_user(request)
+        if message:
+            return JsonResponse({
+                    "status": 1,
+                    "message": message
+                    })
         name = str(request.user)
         request.POST._mutable = True
         request.POST.update({
@@ -429,7 +453,6 @@ class ServiceMappingPluginView(ModelViewSet):
         return super().list(self, request, args, kwargs)
 
     def create(self, request, *args, **kwargs):
-        print("in_view_create")
         """
             Create a new individual Service Mapping Plugin resource.
             The POST method creates a new individual Service Mapping Plugin resource.

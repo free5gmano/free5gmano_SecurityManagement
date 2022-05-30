@@ -8,6 +8,57 @@ from django.db.models import Q
 
 import json
 
+import jwt
+from datetime import datetime, timedelta
+
+
+def gen_token(request):
+    token = request.COOKIES.get("token")
+    message = str()
+    if token:
+        try:
+            rep = JsonResponse({
+                "status": 0,
+                "message": "已重設"
+                })
+            payload = jwt.decode(token, "mnmn5g", algorithm='HS256')
+            name = payload.get("name")
+            payload = {
+                "name": name,
+                "exp": datetime.utcnow() + timedelta(minutes=10)
+            }
+            token = jwt.encode(payload, "mnmn5g", algorithm='HS256').decode('utf-8')
+            rep.set_cookie('token', token)
+            return rep
+        except jwt.ExpiredSignatureError:
+            message = 'token已失效'
+        except jwt.DecodeError:
+            message = 'token認證失敗'
+        except jwt.InvalidTokenError:
+            message = '非法的token'
+    else:
+        message = "無token"
+    return JsonResponse({
+            "status": 1,
+            "message": message
+            })
+
+def verify_token(request):
+    token = request.COOKIES.get("token")
+    name, message = str(), str()
+    if token:
+        try:
+            payload = jwt.decode(token, "mnmn5g", algorithm='HS256')
+            name = payload.get("name")
+        except jwt.ExpiredSignatureError:
+            message = 'token已失效'
+        except jwt.DecodeError:
+            message = 'token認證失敗'
+        except jwt.InvalidTokenError:
+            message = '非法的token'
+    else:
+        message = "無token"
+    return name, message
 
 def login(request):
     if request.method != "POST":
@@ -31,7 +82,6 @@ def login(request):
             })
     else:
         Auth.login(request, user)
-        request.session.create()
         uu_id = user.id
         role = user.role
         if role not in ["tenant", "admin"]:
@@ -40,12 +90,17 @@ def login(request):
             "message": "該帳號未被授權"
             })
         else:
+            payload = {
+                "name": name,
+                "exp": datetime.utcnow() + timedelta(minutes=10)
+            }
+            token = jwt.encode(payload, "mnmn5g", algorithm='HS256').decode('utf-8')
             rep = JsonResponse({
                 "status": 0,
                 "message": "登入成功",
                 "role": role
                 })
-            request.session['uu_id'] = uu_id
+            rep.set_cookie('token', token)
             rep.set_cookie('uu_id', uu_id)
         return rep
 
@@ -99,8 +154,17 @@ def register(request):
             })
 
 def unverified_list(request):
-    name = request.user
-    print(name)
+    if request.method != "GET":
+        return JsonResponse({
+            "status": 1,
+            "message": "請用GET"
+            })
+    name, message= verify_token(request)
+    if message:
+        return JsonResponse({
+            "status": 1,
+            "message": message
+            })
     if name not in ["AnonymousUser", "", None]:
         user_obj = User.objects.filter(username=name).first()
         if user_obj:
@@ -131,8 +195,7 @@ def unverified_list(request):
             "id": data.id,
             "username": data.username,
             "join_data": join_time,
-            "last_login": login_time,
-            "email": data.email
+            "last_login": login_time
         })
 
     return JsonResponse({
@@ -141,7 +204,17 @@ def unverified_list(request):
             })
 
 def admin_check(request):
-    name = request.user
+    if request.method != "POST":
+        return JsonResponse({
+            "status": 1,
+            "message": "請用POST"
+            })
+    name, message = verify_token(request)
+    if message:
+        return JsonResponse({
+            "status": 1,
+            "message": message
+            })
     if name not in ["AnonymousUser", "", None]:
         user_obj = User.objects.filter(username=name).first()
         if user_obj:
@@ -166,6 +239,11 @@ def admin_check(request):
     data = request.body.decode("utf-8")
     data = json.loads(data)
     names = data.get('names')
+    if not names:
+        return JsonResponse({
+            "status": 1,
+            "message": "names為空"
+            })
     for name in names:
         User.objects.filter(username=name).update(role="tenant")
         
@@ -175,7 +253,12 @@ def admin_check(request):
             })
 
 def get_role(request):
-    name = request.user
+    name, message = verify_token(request)
+    if message:
+        return JsonResponse({
+            "status": 1,
+            "message": message
+            })
     if name not in ["AnonymousUser", "", None]:
         user_obj = User.objects.filter(username=name).first()
         if user_obj:
@@ -195,12 +278,91 @@ def get_role(request):
                 "message": "請先登入"
             })
 
+def plugin_switch_share(request):
+    if request.method != "POST":
+        return JsonResponse({
+            "status": 1,
+            "message": "請用POST"
+            })
+    name, message = verify_token(request)
+    if message:
+        return JsonResponse({
+            "status": 1,
+            "message": message
+            })
+    data = request.body.decode("utf-8")
+    data = json.loads(data)
+    file_name = data.get('name')
+    share = data.get('share')
+    try:
+        plugin_object = ServiceMappingPluginModel.objects.filter(name=file_name)
+        if plugin_object:
+            plugin_object.update(share=share)
+            return JsonResponse({
+                    "status": 0,
+                    "message": "修改成功"
+                    })
+        else:
+            return JsonResponse({
+                    "status": 1,
+                    "message": "檔案不存在"
+                    })
+    except:
+        return JsonResponse({
+                "status": 1,
+                "message": "修改失敗"
+                })
+
+def template_switch_share(request):
+    if request.method != "POST":
+        return JsonResponse({
+            "status": 1,
+            "message": "請用POST"
+            })
+    name, message = verify_token(request)
+    if message:
+        return JsonResponse({
+            "status": 1,
+            "message": message
+            })
+    data = request.body.decode("utf-8")
+    data = json.loads(data)
+    file_name = data.get('name')
+    share = data.get('share')
+    template_type = data.get('type')
+    if template_type not in ["VNF", "NSD", "NRM"]:
+        return JsonResponse({
+                "status": 1,
+                "message": "type 不存在"
+                })
+    try:
+        template_object = GenericTemplate.objects.filter(name=file_name).filter(templateType=template_type)
+        if template_object:
+            template_object.update(share=share)
+            return JsonResponse({
+                    "status": 0,
+                    "message": "修改成功"
+                    })
+        else:
+            return JsonResponse({
+                    "status": 1,
+                    "message": "檔案不存在"
+                    })
+    except:
+        return JsonResponse({
+                "status": 1,
+                "message": "修改失敗"
+                })
+
 def logout(request):
     Auth.logout(request)
-    return JsonResponse({
+    rep = JsonResponse({
             "status": 0,
             "message": "登出"
             })
+    rep.delete_cookie('token')
+    rep.delete_cookie('uu_id')
+    return rep
 
 def get(request):
     name = request.user
@@ -300,30 +462,6 @@ def slice_list(request):
             "data": result_data,
             "uu_id": uu_id
             })
-
-def switch_share(request):
-    data = request.body.decode("utf-8")
-    data = json.loads(data)
-    name = data.get('name')
-    share = data.get('share')
-    try:
-        plygin_object = ServiceMappingPluginModel.objects.filter(name=name)
-        if plygin_object:
-            plygin_object.update(share=share)
-            return JsonResponse({
-                    "status": 0,
-                    "message": "修改成功"
-                    })
-        else:
-            return JsonResponse({
-                    "status": 1,
-                    "message": "檔案不存在"
-                    })
-    except:
-        return JsonResponse({
-                "status": 1,
-                "message": "修改失敗"
-                })
 
 def switch_share_gen(request):
     data = request.body.decode("utf-8")

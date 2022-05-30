@@ -8,7 +8,9 @@ urlpatterns = [
     path("get_role/", views.get_role),
     path("unverified_list/", views.unverified_list),
     path("admin_check/", views.admin_check),
-    path("switch_share/", views.switch_share),
+    path("plugin_switch_share/", views.plugin_switch_share),
+    path("template_switch_share/", views.template_switch_share),
+    path("gen_token/", views.gen_token),
     path("logout/", views.logout),
     path("get/", views.get), ### only test not use
     path("service_plygin_list/", views.service_plygin_list), ### only test not use
